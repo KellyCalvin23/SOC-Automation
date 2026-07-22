@@ -1,0 +1,9 @@
+# Never commit real credentials
+.abuseipdb-key
+*.pem
+id_*
+*_rsa
+*_ed25519
+
+# OS cruft
+.DS_Store

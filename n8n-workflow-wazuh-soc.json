@@ -1,0 +1,245 @@
+{
+  "id": "8O0pbEFRdsFb5AVC",
+  "name": "Wazuh SOC Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 🛡️ Wazuh SOC Triage\nWazuh Manager → n8n → AbuseIPDB + Ollama (local AI) → Discord\n\nEvery alert at severity ≥7 gets normalized, checked against AbuseIPDB, triaged by a self-hosted LLM, and posted to Discord with both an AI summary and a rule-based suggested next step. **Fully read-only — nothing here takes automated action on your systems.**\n\nFollow the numbered stages below left→right. Full write-up: `~/Documents/soc-automation/README.md`.",
+        "height": 160,
+        "width": 2000,
+        "color": 4
+      },
+      "id": "sticky-overview",
+      "name": "Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-220, -440]
+    },
+    {
+      "parameters": {
+        "content": "### 1️⃣ Ingest & Normalize\nWazuh manager's `custom-n8n` integration script POSTs the raw alert JSON here in real time.\n\n**Normalize Alert** flattens it into a predictable shape (level, description, agent, source IP, groups, raw log) that every node downstream relies on.",
+        "height": 220,
+        "width": 300,
+        "color": 6
+      },
+      "id": "sticky-stage1",
+      "name": "Stage 1 Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-220, -180]
+    },
+    {
+      "parameters": {
+        "content": "### 2️⃣ Severity Gate\nOnly alerts at **level ≥ 7** continue. Must match the `<level>` set in `ossec.conf` on the Wazuh manager — change both together or alerts will silently mismatch.\n\nLower-severity alerts stop here, no output.",
+        "height": 220,
+        "width": 220,
+        "color": 6
+      },
+      "id": "sticky-stage2",
+      "name": "Stage 2 Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [260, -180]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wazuh-alert",
+        "responseMode": "onReceived",
+        "responseData": "{\"status\":\"received\"}",
+        "options": {}
+      },
+      "id": "webhook-in",
+      "name": "Wazuh Alert In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-200, 0],
+      "webhookId": "wazuh-alert"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst src = raw.body || raw;\nconst rule = src.rule || {};\nconst agent = src.agent || {};\nconst data = src.data || {};\n\nreturn {\n  json: {\n    level: rule.level,\n    description: rule.description,\n    ruleId: rule.id,\n    groups: rule.groups || [],\n    agentName: agent.name,\n    agentIp: agent.ip,\n    srcIp: data.srcip,\n    fullLog: src.full_log,\n    timestamp: src.timestamp\n  }\n};"
+      },
+      "id": "normalize-alert",
+      "name": "Normalize Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-severity",
+              "leftValue": "={{ $json.level }}",
+              "rightValue": 7,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "severity-filter",
+      "name": "Severity >= 7?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "content": "### 3️⃣ Enrich · AbuseIPDB 🔍\n**LIVE.** Skips gracefully if there's no source IP (e.g. local PAM events). Checks the IP's abuse confidence score, country, ISP, and report count.\n\nFree tier: **1,000 lookups/day**. Errors/rate-limits continue the flow rather than failing it (`onError: continueRegularOutput`).",
+        "height": 260,
+        "width": 460,
+        "color": 3
+      },
+      "id": "sticky-stage3",
+      "name": "Stage 3 Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [500, -220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-srcip",
+              "leftValue": "={{ $json.srcIp }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-srcip",
+      "name": "Has Source IP?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.abuseipdb.com/api/v2/check?ipAddress={{ $json.srcIp }}&maxAgeInDays=90",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Key", "value": "YOUR_ABUSEIPDB_API_KEY" },
+            { "name": "Accept", "value": "application/json" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "abuseipdb-lookup",
+      "name": "AbuseIPDB Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, -80],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const alert = $('Normalize Alert').item.json;\nconst input = $input.item.json;\nconst abuseData = input.data && typeof input.data.abuseConfidenceScore !== 'undefined' ? input.data : null;\n\nconst abuseLine = abuseData\n  ? `AbuseIPDB: confidence=${abuseData.abuseConfidenceScore}%, country=${abuseData.countryCode || 'n/a'}, isp=${abuseData.isp || 'n/a'}, totalReports=${abuseData.totalReports}`\n  : 'AbuseIPDB: no data (no source IP, lookup skipped, or lookup failed)';\n\nconst aiPrompt = `Analyze this Wazuh security alert. Reply with a 2-3 sentence triage summary and a priority of Low/Medium/High/Critical.\\n\\nAlert: ${alert.description}\\nRule ID: ${alert.ruleId}  Level: ${alert.level}\\nAgent: ${alert.agentName} (${alert.agentIp})\\nSource IP: ${alert.srcIp}\\nGroups: ${alert.groups}\\nRaw log: ${alert.fullLog}\\n${abuseLine}`;\n\nreturn {\n  json: {\n    ...alert,\n    abuseConfidenceScore: abuseData ? abuseData.abuseConfidenceScore : null,\n    abuseCountry: abuseData ? abuseData.countryCode : null,\n    abuseTotalReports: abuseData ? abuseData.totalReports : null,\n    aiPrompt\n  }\n};"
+      },
+      "id": "build-ai-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 0]
+    },
+    {
+      "parameters": {
+        "content": "### 4️⃣ AI Triage 🤖 · Ollama\n**LIVE.** Self-hosted `llama3.1:8b` at `YOUR_OLLAMA_HOST_IP:11434`, CPU-only inference. **Expect 30-90s+ per alert** — the slowest stage by far, but fine for periodic security alerts (not real-time).\n\nSwap model/host by editing this node's URL + jsonBody. No API key, no per-request cost.",
+        "height": 240,
+        "width": 460,
+        "color": 5
+      },
+      "id": "sticky-stage4",
+      "name": "Stage 4 Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [980, -200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_OLLAMA_HOST_IP:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3.1:8b\",\n  \"prompt\": {{ JSON.stringify($json.aiPrompt) }},\n  \"stream\": false\n}",
+        "options": { "timeout": 180000 }
+      },
+      "id": "ai-analysis",
+      "name": "AI Analysis (Ollama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const alert = $('Build AI Prompt').item.json;\nconst aiResp = $input.item.json;\n\nconst groups = alert.groups || [];\nconst groupsStr = Array.isArray(groups) ? groups.join(' ') : String(groups);\n\nlet suggestion = \"No predefined suggestion — review manually.\";\nif (groupsStr.includes('authentication_fail')) {\n  suggestion = \"Repeated auth failures. Check if the source IP/user is expected, look for a brute-force pattern, consider a temporary block if external and repeated.\";\n} else if (groupsStr.includes('web')) {\n  suggestion = \"Web-layer alert. Check for a known CVE match, review the request payload for injection patterns, check WAF/reverse-proxy logs.\";\n} else if (groupsStr.includes('malware') || groupsStr.includes('rootkit')) {\n  suggestion = \"Possible malware/rootkit indicator. Consider isolating the host from the network and capturing volatile data before any remediation — do not auto-remediate.\";\n} else if (groupsStr.includes('firewall') || groupsStr.includes('ids')) {\n  suggestion = \"Network-layer alert. Correlate source/destination with your asset inventory and check for a scanning pattern.\";\n}\nif (alert.abuseConfidenceScore !== null && alert.abuseConfidenceScore !== undefined && alert.abuseConfidenceScore >= 50) {\n  suggestion += ` Source IP has a ${alert.abuseConfidenceScore}% AbuseIPDB confidence score (${alert.abuseTotalReports} reports) — treat as higher priority.`;\n}\n\nconst aiSummary = typeof aiResp.response === 'string' && aiResp.response.trim()\n  ? aiResp.response.trim()\n  : \"(AI Analysis node not enabled yet — see sticky note)\";\n\nreturn {\n  json: {\n    level: alert.level,\n    description: alert.description,\n    ruleId: alert.ruleId,\n    groups: alert.groups,\n    agentName: alert.agentName,\n    agentIp: alert.agentIp,\n    srcIp: alert.srcIp,\n    fullLog: alert.fullLog,\n    timestamp: alert.timestamp,\n    abuseConfidenceScore: alert.abuseConfidenceScore,\n    abuseCountry: alert.abuseCountry,\n    abuseTotalReports: alert.abuseTotalReports,\n    aiSummary,\n    suggestedResponse: suggestion,\n    note: \"Suggested response is a rule-based hint only — no automated action has been taken.\"\n  }\n};"
+      },
+      "id": "suggested-response",
+      "name": "Suggested Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1480, 0]
+    },
+    {
+      "parameters": {
+        "content": "### 5️⃣ Notify 🔔 · Discord\n**Suggested Response** adds a rule-based next-step hint, auto-boosted if AbuseIPDB confidence ≥ 50%.\n\n**Discord Notify** posts one embed: title, color by severity (🔴 ≥12, 🟠 ≥9, 🔵 below), fields for level/agent/source IP/reputation/AI summary/next step.\n\nNothing here takes automated action — every alert is for human review.",
+        "height": 260,
+        "width": 460,
+        "color": 7
+      },
+      "id": "sticky-stage5",
+      "name": "Stage 5 Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1460, -220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"embeds\": [\n    {\n      \"title\": {{ JSON.stringify($json.description || 'Wazuh Alert') }},\n      \"color\": {{ $json.level >= 12 ? 15158332 : ($json.level >= 9 ? 15105570 : 3447003) }},\n      \"fields\": [\n        { \"name\": \"Level\", \"value\": {{ JSON.stringify(String($json.level)) }}, \"inline\": true },\n        { \"name\": \"Agent\", \"value\": {{ JSON.stringify(($json.agentName || 'n/a') + ' (' + ($json.agentIp || 'n/a') + ')') }}, \"inline\": true },\n        { \"name\": \"Source IP\", \"value\": {{ JSON.stringify($json.srcIp || 'n/a') }}, \"inline\": true },\n        { \"name\": \"IP Reputation (AbuseIPDB)\", \"value\": {{ JSON.stringify(($json.abuseConfidenceScore !== null && $json.abuseConfidenceScore !== undefined) ? ($json.abuseConfidenceScore + '% confidence, ' + ($json.abuseTotalReports || 0) + ' reports, ' + ($json.abuseCountry || 'n/a')) : 'no data') }}, \"inline\": true },\n        { \"name\": \"AI Summary\", \"value\": {{ JSON.stringify($json.aiSummary || 'n/a') }} },\n        { \"name\": \"Suggested Next Step\", \"value\": {{ JSON.stringify($json.suggestedResponse || 'n/a') }} }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "discord-notify",
+      "name": "Discord Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1720, 0]
+    }
+  ],
+  "connections": {
+    "Wazuh Alert In": { "main": [[{ "node": "Normalize Alert", "type": "main", "index": 0 }]] },
+    "Normalize Alert": { "main": [[{ "node": "Severity >= 7?", "type": "main", "index": 0 }]] },
+    "Severity >= 7?": {
+      "main": [
+        [{ "node": "Has Source IP?", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Has Source IP?": {
+      "main": [
+        [{ "node": "AbuseIPDB Lookup", "type": "main", "index": 0 }],
+        [{ "node": "Build AI Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "AbuseIPDB Lookup": { "main": [[{ "node": "Build AI Prompt", "type": "main", "index": 0 }]] },
+    "Build AI Prompt": { "main": [[{ "node": "AI Analysis (Ollama)", "type": "main", "index": 0 }]] },
+    "AI Analysis (Ollama)": { "main": [[{ "node": "Suggested Response", "type": "main", "index": 0 }]] },
+    "Suggested Response": { "main": [[{ "node": "Discord Notify", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "meta": { "instanceId": "soc-automation-template" }
+}

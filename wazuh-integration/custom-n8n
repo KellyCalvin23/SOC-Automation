@@ -1,0 +1,25 @@
+#!/bin/sh
+# Wazuh custom integration wrapper — invokes custom-n8n.py using Wazuh's bundled python.
+# Install location: /var/ossec/integrations/custom-n8n  (must be executable, owned by root:wazuh, mode 750)
+
+WPYTHON_BIN="framework/python/bin/python3"
+SCRIPT_PATH_NAME="$0"
+DIR_NAME="$(cd $(dirname ${SCRIPT_PATH_NAME}); pwd -P)"
+SCRIPT_NAME="$(basename ${SCRIPT_PATH_NAME})"
+
+case ${DIR_NAME} in
+    */active-response/bin | */wodles*)
+        if [ -z "${WAZUH_PATH}" ]; then
+            WAZUH_PATH=$(cd ${DIR_NAME}/../..; pwd)
+        fi
+    ;;
+    */bin | */integrations)
+        if [ -z "${WAZUH_PATH}" ]; then
+            WAZUH_PATH=$(cd ${DIR_NAME}/..; pwd)
+        fi
+    ;;
+esac
+
+PYTHON_SCRIPT="${DIR_NAME}/${SCRIPT_NAME}.py"
+
+${WAZUH_PATH}/${WPYTHON_BIN} ${PYTHON_SCRIPT} "$@"

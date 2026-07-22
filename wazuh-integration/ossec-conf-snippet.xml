@@ -1,0 +1,16 @@
+<!--
+  Add this <integration> block inside the top-level <ossec_config> section of
+  /var/ossec/etc/ossec.conf on the Wazuh MANAGER, then restart:
+    systemctl restart wazuh-manager
+
+  - level: minimum rule.level that triggers a forward to n8n (7 = default "medium" and up).
+    Lower it if you want more alerts through, raise it to cut noise.
+  - hook_url: replace <N8N_HOST> with the reachable hostname/IP of your n8n instance.
+    The path /webhook/wazuh-alert must match the Webhook node's path in the n8n workflow.
+-->
+<integration>
+    <name>custom-n8n</name>
+    <hook_url>http://<N8N_HOST>:5678/webhook/wazuh-alert</hook_url>
+    <level>7</level>
+    <alert_format>json</alert_format>
+</integration>
