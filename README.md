@@ -43,9 +43,20 @@ SOC-Automation/
 │   ├── custom-n8n                # Shell wrapper Wazuh invokes
 │   ├── custom-n8n.py              # Forwards the alert JSON to n8n's webhook
 │   └── ossec-conf-snippet.xml    # <integration> block to add to ossec.conf
+├── screenshots/                   # See screenshots/README.md
 ├── DEPLOYMENT.md                  # Full step-by-step setup guide
 └── README.md
 ```
+
+## Screenshots
+
+**n8n workflow canvas**
+![n8n workflow canvas](screenshots/n8n-workflow-canvas.png)
+
+**Example Discord alert**
+![Example Discord alert](screenshots/discord-alert-example.png)
+
+*(Images not yet added — see [screenshots/README.md](screenshots/README.md) for what to drop in and expected filenames.)*
 
 ## Quick start
 
