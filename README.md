@@ -56,7 +56,8 @@ SOC-Automation/
 **Example Discord alert**
 ![Example Discord alert](screenshots/discord-alert-example.png)
 
-*(Images not yet added — see [screenshots/README.md](screenshots/README.md) for what to drop in and expected filenames.)*
+**Matching raw alert in Wazuh**
+![Wazuh alert source](screenshots/wazuh-alert-source.png)
 
 ## Quick start
 
