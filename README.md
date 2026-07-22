@@ -1,5 +1,7 @@
 # SOC-Automation
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 An AI-assisted, self-hosted SOC triage pipeline: **Wazuh** detects, **n8n** orchestrates, **AbuseIPDB** + a self-hosted **Ollama** LLM enrich and summarize, **Discord** notifies. Fully read-only — nothing in this pipeline takes automated action against your infrastructure. Every alert is a suggestion for a human to review.
 
 ```mermaid
@@ -69,4 +71,4 @@ See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the full walkthrough. In short, you'l
 
 ## License
 
-No license file is included — treat this as source-available for personal/educational use. Adapt freely for your own home lab or authorized environment.
+[MIT](LICENSE) — use, modify, and distribute freely, including commercially, with attribution.
